@@ -88,10 +88,28 @@
             
             <div class="mt-4">
                 <a href="https://instagram.com/testkafe" target="_blank" class="btn btn-light rounded-circle shadow-sm me-2" style="width:40px;height:40px;padding:8px"><i class="fab fa-instagram text-danger fs-5"></i></a>
-                <a href="https://wa.me/905550060273?text=Merhaba" target="_blank" class="btn btn-light rounded-circle shadow-sm" style="width:40px;height:40px;padding:8px"><i class="fab fa-whatsapp text-success fs-5"></i></a>
+            </div>
+
+            <!-- GARSON & HESAP BUTONLARI -->
+            <div class="mt-4 pt-3 border-top d-flex gap-2 justify-content-center">
+                <button onclick="window.sendCall('garson')" class="btn btn-sm btn-outline-primary rounded-pill shadow-sm"><i class="fas fa-bell"></i> Garson Çağır</button>
+                <button onclick="window.sendCall('hesap')" class="btn btn-sm btn-outline-success rounded-pill shadow-sm"><i class="fas fa-receipt"></i> Hesap İste</button>
             </div>
         </div>
     </div>
+
+    <!-- SİPARİŞ TAKİP ÇUBUĞU (GİZLİ BAŞLAR) -->
+    <div id="liveTracker" class="fixed-bottom bg-white shadow p-3 d-none" style="border-top-left-radius: 20px; border-top-right-radius: 20px; z-index: 1050; animation: slideUp 0.5s forwards;">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="m-0 fw-bold"><i class="fas fa-motorcycle text-primary"></i> Sipariş Durumu</h6>
+            <button class="btn-close" onclick="document.getElementById('liveTracker').classList.add('d-none')"></button>
+        </div>
+        <div class="progress mb-2" style="height:10px; border-radius:5px">
+            <div id="trackerProgress" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" style="width: 50%"></div>
+        </div>
+        <p id="trackerText" class="text-center small fw-bold text-warning m-0">Mutfakta Hazırlanıyor...</p>
+    </div>
+    <style>@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }</style>
 
     <!-- PREVIEW MODAL -->
     <div class="modal fade" id="dm" tabindex="-1">
@@ -125,10 +143,9 @@
                         <span class="fs-5 text-muted">Toplam:</span>
                         <span class="fs-4 fw-bold" style="color:#2063a7" id="cartTotal">0₺</span>
                     </div>
-                    <button onclick="sendOrder()" class="btn btn-success w-100 py-3 fw-bold rounded-pill shadow-lg d-flex justify-content-center align-items-center" style="font-size:1.1rem" >
-                        <i class="fab fa-whatsapp fs-4 me-2"></i> Siparişi WhatsApp ile Gönder
+                    <button onclick="window.sendOrder()" class="btn btn-success w-100 py-3 fw-bold rounded-pill shadow-lg d-flex justify-content-center align-items-center" style="font-size:1.1rem">
+                        <i class="fas fa-check-circle fs-4 me-2"></i> Siparişi Onayla ve Gönder
                     </button>
-                    
                 </div>
             </div>
         </div>
@@ -163,7 +180,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
         // Firebase Config
         const firebaseConfig = {
@@ -261,7 +278,61 @@
             const t = document.getElementById('tInput').value.trim();
             if(!t) { alert("Lütfen masa numarasını girin!"); return; }
             tableModal.hide();
-            window.submitToFirebase(t);
+            
+            if (window._callTypePending) {
+                const type = window._callTypePending;
+                window._callTypePending = null;
+                window.processCall(type, t);
+            } else {
+                window.submitToFirebase(t);
+            }
+        };
+
+        window.sendCall = function(type) {
+            const params = new URLSearchParams(window.location.search);
+            const table = params.get('masa') || params.get('table');
+            if(!table) {
+                window._callTypePending = type;
+                tableModal.show();
+            } else {
+                window.processCall(type, table);
+            }
+        };
+
+        window.processCall = async function(type, tableNo) {
+            try {
+                await addDoc(collection(db, "cafes", "test-cafe", "calls"), {
+                    type: type,
+                    table: tableNo,
+                    status: 'pending',
+                    time: serverTimestamp()
+                });
+                alert("Talebiniz personellere iletildi!");
+            } catch(e) {
+                console.error(e);
+                alert("İletilemedi. Lütfen bağlantınızı kontrol edin.");
+            }
+        };
+
+        window.currentOrderId = null;
+        window.listenToOrder = function(orderId) {
+            const tr = document.getElementById('liveTracker');
+            const pbar = document.getElementById('trackerProgress');
+            const pt = document.getElementById('trackerText');
+            tr.classList.remove('d-none');
+            
+            onSnapshot(doc(db, "cafes", "test-cafe", "orders", orderId), (docSnap) => {
+                if(docSnap.exists()) {
+                    const status = docSnap.data().status;
+                    if(status === 'completed') {
+                        pbar.style.width = '100%';
+                        pbar.classList.replace('bg-warning', 'bg-success');
+                        pt.innerText = '✅ Siparişiniz Teslim Edildi / Yolda!';
+                        pt.classList.replace('text-warning', 'text-success');
+                        setTimeout(()=> tr.classList.add('d-none'), 15000); // 15 sn sonra gizle
+                    }
+                }
+            });
         };
 
         window.submitToFirebase = async function(tableNo) {
@@ -274,13 +345,16 @@
                 let total = 0;
                 window.cart.forEach(i => total += i.p * i.q);
 
-                await addDoc(collection(db, "cafes", "test-cafe", "orders"), {
+                const newRef = await addDoc(collection(db, "cafes", "test-cafe", "orders"), {
                     table: tableNo,
                     items: window.cart,
                     total: total,
                     status: 'pending',
                     time: serverTimestamp()
                 });
+
+                // Canlı dinlemeyi başlat
+                window.listenToOrder(newRef.id);
 
                 // Başarı
                 btn.innerHTML = '<i class="fas fa-check-circle fs-4 me-2"></i> Sipariş Başarıyla Alındı!';
