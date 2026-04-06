@@ -143,15 +143,49 @@
         <span class="fw-bold fs-5" id="cartBarTotal">0₺</span>
     </div>
 
+    <!-- TABLE PROMPT MODAL -->
+    <div class="modal fade" id="tableModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius:24px">
+                <div class="modal-body p-4 text-center">
+                    <i class="fas fa-chair fs-1 text-warning mb-3"></i>
+                    <h5 class="fw-bold mb-3">Masa Numarası Gerekiyor</h5>
+                    <p class="text-muted small">Siparişinizi size ulaştırabilmemiz için lütfen bulunduğunuz masa numarasını girin.</p>
+                    <input type="text" id="tInput" class="form-control text-center fw-bold mb-3 fs-5" placeholder="Örn: 5">
+                    <button onclick="confirmOrderWithTable()" class="btn btn-warning w-100 fw-bold rounded-pill p-2 shadow-sm">Devam Et ve Siparişi Ver</button>
+                    <button class="btn btn-light w-100 fw-bold rounded-pill p-2 mt-2" data-bs-dismiss="modal">İptal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- BOOTSTRAP -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        let cart = [];
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyByWqykN5_VCN9NeG61ZeXNA760JLpRCFI",
+            authDomain: "cafeeditorpro.firebaseapp.com",
+            projectId: "cafeeditorpro",
+            storageBucket: "cafeeditorpro.firebasestorage.app",
+            messagingSenderId: "523162187284",
+            appId: "1:523162187284:web:a860c0b698eaaba28dd901",
+            measurementId: "G-KKS5WRXVVY"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.cart = [];
         let priceTarget = 0;
         let pNameTarget = "";
 
+        const tableModal = new bootstrap.Modal(document.getElementById('tableModal'));
+
         const m = new bootstrap.Modal(document.getElementById('dm'));
-        function openDetails(name, desc, price, img) {
+        window.openDetails = function(name, desc, price, img) {
             document.getElementById('mt').innerText = name;
             document.getElementById('md').innerText = desc;
             document.getElementById('mp').innerText = price + '₺';
@@ -160,41 +194,41 @@
             const iEl = document.getElementById('mi');
             if(img) { iEl.src=img; iEl.style.display='block'; } else { iEl.style.display='none'; }
             const btn = document.getElementById('mbtn');
-            btn.onclick = () => { addToCart(pNameTarget, priceTarget); m.hide(); };
+            btn.onclick = () => { window.addToCart(pNameTarget, priceTarget); m.hide(); };
             m.show();
-        }
+        };
 
-        function addToCart(name, price) {
-            const existing = cart.find(x => x.n === name);
+        window.addToCart = function(name, price) {
+            const existing = window.cart.find(x => x.n === name);
             if(existing) existing.q++;
-            else cart.push({n: name, p: parseFloat(price), q: 1});
-            updateCart();
-            // Küçük bir animasyon
+            else window.cart.push({n: name, p: parseFloat(price), q: 1});
+            window.updateCart();
+            // Animation
             const bar = document.getElementById('cartBar');
             bar.style.transform = 'translate(-50%, -10px) scale(1.05)';
             setTimeout(() => bar.style.transform = 'translateX(-50%)', 200);
-        }
+        };
 
-        function updateItem(idx, change) {
-            cart[idx].q += change;
-            if(cart[idx].q <= 0) cart.splice(idx, 1);
-            updateCart();
-        }
+        window.updateItem = function(idx, change) {
+            window.cart[idx].q += change;
+            if(window.cart[idx].q <= 0) window.cart.splice(idx, 1);
+            window.updateCart();
+        };
 
-        function updateCart() {
+        window.updateCart = function() {
             let total = 0;
             let count = 0;
             let html = "";
-            cart.forEach((item, idx) => {
+            window.cart.forEach((item, idx) => {
                 total += item.p * item.q;
                 count += item.q;
                 html += `
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div><h6 class="m-0 fw-bold">${item.n}</h6><small class="text-muted">${item.p}₺</small></div>
                     <div class="btn-group btn-group-sm shadow-sm">
-                        <button onclick="updateItem(${idx}, -1)" class="btn btn-light border">-</button>
+                        <button onclick="window.updateItem(${idx}, -1)" class="btn btn-light border">-</button>
                         <button class="btn btn-white border fw-bold" disabled>${item.q}</button>
-                        <button onclick="updateItem(${idx}, 1)" class="btn btn-light border">+</button>
+                        <button onclick="window.updateItem(${idx}, 1)" class="btn btn-light border">+</button>
                     </div>
                 </div>`;
             });
@@ -208,27 +242,68 @@
             
             if(count > 0) bar.classList.add('active');
             else { bar.classList.remove('active'); bootstrap.Modal.getInstance(document.getElementById('cartModal'))?.hide(); }
-        }
+        };
 
-        function sendOrder() {
-            if(cart.length === 0) return;
+        window.sendOrder = function() {
+            if(window.cart.length === 0) return;
             const params = new URLSearchParams(window.location.search);
-            const table = params.get('masa') || params.get('table') || 'Belirtilmedi';
+            const table = params.get('masa') || params.get('table');
             
-            let text = `👋 Merhaba, sipariş vermek istiyorum:\n\n📌 Masa: ${table}\n\n`;
-            let total = 0;
-            cart.forEach(i => {
-                text += `🔸 ${i.q}x ${i.n} - ${(i.p*i.q).toFixed(2)}₺\n`;
-                total += i.p*i.q;
-            });
-            text += `\n💵 *Toplam: ${total.toFixed(2)}₺*`;
-            
-            const phone = '905550060273';
-            const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-            window.open(url, '_blank');
-        }
+            if(!table) {
+                bootstrap.Modal.getInstance(document.getElementById('cartModal'))?.hide();
+                tableModal.show();
+            } else {
+                window.submitToFirebase(table);
+            }
+        };
 
-        function search(val) {
+        window.confirmOrderWithTable = function() {
+            const t = document.getElementById('tInput').value.trim();
+            if(!t) { alert("Lütfen masa numarasını girin!"); return; }
+            tableModal.hide();
+            window.submitToFirebase(t);
+        };
+
+        window.submitToFirebase = async function(tableNo) {
+            const btn = document.getElementById('cartTotal').parentElement.nextElementSibling;
+            const orgHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> İletiliyor...';
+            btn.disabled = true;
+
+            try {
+                let total = 0;
+                window.cart.forEach(i => total += i.p * i.q);
+
+                await addDoc(collection(db, "cafes", "test-cafe", "orders"), {
+                    table: tableNo,
+                    items: window.cart,
+                    total: total,
+                    status: 'pending',
+                    time: serverTimestamp()
+                });
+
+                // Başarı
+                btn.innerHTML = '<i class="fas fa-check-circle fs-4 me-2"></i> Sipariş Başarıyla Alındı!';
+                btn.classList.replace('btn-success', 'btn-dark');
+                
+                setTimeout(() => {
+                    window.cart = [];
+                    window.updateCart();
+                    bootstrap.Modal.getInstance(document.getElementById('cartModal'))?.hide();
+                    btn.innerHTML = orgHtml;
+                    btn.disabled = false;
+                    btn.classList.replace('btn-dark', 'btn-success');
+                }, 3000);
+
+            } catch (err) {
+                console.error(err);
+                alert("Hata: Sipariş Gönderilemedi! Lütfen garsona bilgi veriniz.");
+                btn.innerHTML = orgHtml;
+                btn.disabled = false;
+            }
+        };
+
+        window.search = function(val) {
             const t = val.toLowerCase();
             document.querySelectorAll('.card').forEach(el => {
                 const txt = el.innerText.toLowerCase();
